@@ -51,7 +51,7 @@ constexpr unsigned int MISSED_MESSAGES_THRESHOLD{5};
  *
  * Intended for filtering away numerical errors.
  */
-constexpr double MIN_SPEED_THRESHOLD{0.5};
+constexpr double MIN_SPEED_THRESHOLD{0.0};
 }
 
 namespace abb
