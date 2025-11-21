@@ -444,7 +444,10 @@ bool EGMManager::read(MotionData& motion_data)
       {
         if(channel.read(motion_group))
         {
-          any_new_states = true;
+          // (Jodle) For multimove systems with joint coupling,
+          //        I'm really only concerned about the main robot task's egm state.
+          if (motion_group.name.empty() || motion_group.name == "rob1")
+            any_new_states = true;
         }
       }
     }
