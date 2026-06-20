@@ -40,7 +40,7 @@
 #include <mutex>
 #include <functional>
 
-#include <abb_librws/rws_state_machine_interface.h>
+#include <abb_librws/v1_0/rws_state_machine_interface.h>
 
 #include "utilities.h"
 
@@ -48,14 +48,13 @@ namespace abb
 {
 namespace robot
 {
-
 /**
  * \brief Manager for handling Robot Web Service (RWS) communication with an ABB robot controller.
  */
 class RWSManager
 {
 public:
-  using ServiceFunctor = std::function<void(rws::RWSStateMachineInterface& interface)>;
+  using ServiceFunctor = std::function<void(rws::v1_0::RWSStateMachineInterface& interface)>;
 
   /**
    * \brief Creates a manager for handling communication with the robot controller's RWS server.
@@ -65,9 +64,7 @@ public:
    * \param username for the RWS authentication process.
    * \param password for the RWS authentication process.
    */
-  RWSManager(const std::string& ip_address,
-             const unsigned short port_number,
-             const std::string& username,
+  RWSManager(const std::string& ip_address, const unsigned short port_number, const std::string& username,
              const std::string& password);
 
   /**
@@ -81,7 +78,7 @@ public:
    */
   RobotControllerDescription collectAndParseSystemData(const std::string& prefix);
 
- /**
+  /**
    * \brief Collects runtime data, about the robot controller's active system, and updates the runtime data containers.
    *
    * This includes general system states and motion information of the system's mechanical units.
@@ -147,14 +144,23 @@ private:
   std::mutex priority_interface_mutex_;
 
   /**
+   * \brief RWSClient intended for lower priority requests
+   **/
+  rws::v1_0::RWSClient client_;
+
+  /**
+   * \brief RWSClient intended for higher priority requests
+   **/
+  rws::v1_0::RWSClient priority_client_;
+  /**
    * \brief RWS communication interface, intended for lower priority requests.
    */
-  rws::RWSStateMachineInterface interface_;
+  rws::v1_0::RWSStateMachineInterface interface_;
 
   /**
    * \brief RWS communication interface, intended for higher priority requests.
    */
-  rws::RWSStateMachineInterface priority_interface_;
+  rws::v1_0::RWSStateMachineInterface priority_interface_;
 
   /**
    * \brief Key data about the robot controller's active system (in raw, unstructured, format).
@@ -172,7 +178,7 @@ private:
   SystemStateData system_state_data_;
 };
 
-}
-}
+}  // namespace robot
+}  // namespace abb
 
 #endif

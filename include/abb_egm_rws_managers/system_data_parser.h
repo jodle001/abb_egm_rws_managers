@@ -46,7 +46,6 @@ namespace abb
 {
 namespace robot
 {
-
 /**
  * \brief ABB robot controller system data parser that outputs a description of the robot controller.
  */
@@ -207,7 +206,7 @@ private:
   RobotControllerDescription description_;
 };
 
-}
-}
+}  // namespace robot
+}  // namespace abb
 
 #endif
