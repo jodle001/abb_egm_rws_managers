@@ -131,13 +131,13 @@ private:
      * \brief Creates a channel for handling EGM communication with one of the robot controller's EGM clients.
      *
      * \param configuration with specifications for the channel.
-     * \param io_service that manages asynchronous UDP communication events.
+     * \param io_context that manages asynchronous UDP communication events.
      * \param p_new_message_cv condition variable for new message notifications.
      *
      * \throw std::runtime_error if failed to create an EGM interface for the channel.
      */
     Channel(const ChannelConfiguration& configuration,
-            boost::asio::io_service& io_service,
+            boost::asio::io_context& io_context,
             boost::shared_ptr<boost::condition_variable> p_new_message_cv);
 
     /**
@@ -277,7 +277,7 @@ private:
   /**
    * \brief Manages asynchronous UDP communication events.
    */
-  boost::asio::io_service io_service_;
+  boost::asio::io_context io_context_;
 
   /**
    * \brief Threads for processing asynchronous UDP communication events.

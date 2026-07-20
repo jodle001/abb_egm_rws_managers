@@ -68,7 +68,7 @@ namespace robot
  */
 
 EGMManager::Channel::Channel(const ChannelConfiguration& configuration,
-                             boost::asio::io_service& io_service,
+                             boost::asio::io_context& io_context,
                              boost::shared_ptr<boost::condition_variable> p_new_message_cv)
 :
 configuration_{configuration},
@@ -93,7 +93,7 @@ missed_messages_{MISSED_MESSAGES_THRESHOLD}
   }
 
   // Create the communication interface.
-  p_interface_ = std::make_unique<egm::EGMControllerInterface>(io_service, configuration.port_number, interface_cfg);
+  p_interface_ = std::make_unique<egm::EGMControllerInterface>(io_context, configuration.port_number, interface_cfg);
 
   if(!p_interface_ || !p_interface_->isInitialized())
   {
@@ -402,14 +402,14 @@ p_new_message_cv_{new boost::condition_variable{}}
 {
   for(const auto& configuration : channel_configurations)
   {
-    channels_.emplace_back(configuration, io_service_, p_new_message_cv_);
-    threads_.emplace_back([&]{io_service_.run();});
+    channels_.emplace_back(configuration, io_context_, p_new_message_cv_);
+    threads_.emplace_back([&]{io_context_.run();});
   }
 }
 
 EGMManager::~EGMManager()
 {
-  io_service_.stop();
+  io_context_.stop();
 
   for(auto& thread : threads_)
   {
