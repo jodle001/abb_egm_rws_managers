@@ -102,8 +102,11 @@ void SystemDataParser::parseHeaderRobotWareVersion()
   auto begin{ std::sregex_iterator(version->name().begin(), version->name().end(), regex) };
 
   // Parse the numbers.
-  // Change distance because RW7 version only has <major>.<minor>.<patch>
-  if (std::distance(begin, std::sregex_iterator()) == 2)
+  // RW6 reports <major>.<minor>.<patch>.<build> (3 matches); RW7 reports
+  // <major>.<minor>.<patch> (2 matches). Accept both: the OmniCore port
+  // narrowed this to 2 and left every IRC5 controller unable to connect.
+  auto match_count{ std::distance(begin, std::sregex_iterator()) };
+  if (match_count == 2 || match_count == 3)
   {
     unsigned int value{ 0 };
     unsigned int counter{ 0 };
