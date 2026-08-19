@@ -379,8 +379,20 @@ void RWSManager::collectAndUpdateRuntimeData(SystemStateData& system_state_data,
         // Store the related RAPID task's name.
         state_machine.rapid_task = task.name;
 
-        // Get the current state machine state.
-        state_machine.sm_state.parseString(interface_.getRAPIDSymbolData(task.name, "TRobMain", "current_state"));
+        // Not every motion task carries the StateMachine Add-In modules: on an
+        // external-axis IRC5 station T_EXTAXIS runs TExtAxisEGM and has no
+        // TRobMain, so this symbol has never existed there. The pre-v1_0 getter
+        // returned a status that this loop ignored; the v1_0 getter throws, which
+        // turned a harmless absence into a fatal hardware-init failure. Skip the
+        // task instead, and keep the throw for anything that is not a lookup miss.
+        try
+        {
+          state_machine.sm_state.parseString(interface_.getRAPIDSymbolData(task.name, "TRobMain", "current_state"));
+        }
+        catch (const rws::ProtocolError&)
+        {
+          continue;
+        }
 
         // Get the current EGM action.
         if (indicators.options().egm())
