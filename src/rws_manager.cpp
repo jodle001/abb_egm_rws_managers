@@ -51,8 +51,9 @@ namespace robot
  * Primary methods
  */
 
-RWSManager::RWSManager(const std::string& ip_address, const unsigned short port_number, const std::string& username,
-                       const std::string& password)
+template <typename Interface, typename Client>
+RWSManagerT<Interface, Client>::RWSManagerT(const std::string& ip_address, const unsigned short port_number,
+                                            const std::string& username, const std::string& password)
   : client_{ rws::ConnectionOptions(ip_address, port_number, username, password) }
   , priority_client_{ rws::ConnectionOptions(ip_address, port_number, username, password) }
   , interface_{ client_ }
@@ -74,7 +75,8 @@ RWSManager::RWSManager(const std::string& ip_address, const unsigned short port_
  * Primary methods (for the lower priority RWS interface)
  */
 
-RobotControllerDescription RWSManager::collectAndParseSystemData(const std::string& prefix)
+template <typename Interface, typename Client>
+RobotControllerDescription RWSManagerT<Interface, Client>::collectAndParseSystemData(const std::string& prefix)
 {
   //--------------------------------------------------------
   // Collect the system data
@@ -173,7 +175,9 @@ RobotControllerDescription RWSManager::collectAndParseSystemData(const std::stri
   return description_;
 }
 
-void RWSManager::collectAndUpdateRuntimeData(SystemStateData& system_state_data, MotionData& motion_data)
+template <typename Interface, typename Client>
+void RWSManagerT<Interface, Client>::collectAndUpdateRuntimeData(SystemStateData& system_state_data,
+                                                                 MotionData& motion_data)
 {
   std::lock_guard<std::mutex> guard{ interface_mutex_ };
 
@@ -411,7 +415,7 @@ void RWSManager::collectAndUpdateRuntimeData(SystemStateData& system_state_data,
         }
         else
         {
-          state_machine.egm_action = rws::v1_0::RWSStateMachineInterface::EGMActions::EGM_ACTION_UNKNOWN;
+          state_machine.egm_action = Interface::EGMActions::EGM_ACTION_UNKNOWN;
         }
         system_state_data.state_machines.push_back(state_machine);
       }
@@ -419,7 +423,8 @@ void RWSManager::collectAndUpdateRuntimeData(SystemStateData& system_state_data,
   }
 }
 
-bool RWSManager::isInterfaceReady()
+template <typename Interface, typename Client>
+bool RWSManagerT<Interface, Client>::isInterfaceReady()
 {
   if (interface_mutex_.try_lock())
   {
@@ -430,7 +435,8 @@ bool RWSManager::isInterfaceReady()
   return false;
 }
 
-bool RWSManager::runService(ServiceFunctor const& service)
+template <typename Interface, typename Client>
+bool RWSManagerT<Interface, Client>::runServiceImpl(RWSService const& service)
 {
   if (interface_mutex_.try_lock())
   {
@@ -446,7 +452,8 @@ bool RWSManager::runService(ServiceFunctor const& service)
  * Primary methods (for the higher priority RWS interface)
  */
 
-void RWSManager::runPriorityService(ServiceFunctor const& service)
+template <typename Interface, typename Client>
+void RWSManagerT<Interface, Client>::runPriorityServiceImpl(RWSService const& service)
 {
   std::lock_guard<std::mutex> guard{ priority_interface_mutex_ };
   service(priority_interface_);
@@ -456,7 +463,8 @@ void RWSManager::runPriorityService(ServiceFunctor const& service)
  * Auxiliary methods
  */
 
-std::string RWSManager::debugText() const
+template <typename Interface, typename Client>
+std::string RWSManagerT<Interface, Client>::debugText() const
 {
   //--------------------------------------------------------
   // Support lambdas
@@ -672,6 +680,40 @@ std::string RWSManager::debugText() const
 
   return ss.str();
 }
+
+
+/***********************************************************
+ * Version selection
+ */
+
+RWSVersion rwsVersionFromControllerGeneration(const std::string& controller_generation)
+{
+  // Only OmniCore serves RWS 2.0. Everything else - including an absent or unrecognised
+  // value - keeps the IRC5 behaviour, so existing stations are unaffected.
+  return controller_generation == "omnicore" ? RWSVersion::v2_0 : RWSVersion::v1_0;
+}
+
+std::unique_ptr<RWSManagerBase> makeRWSManager(RWSVersion version, const std::string& ip_address,
+                                               const unsigned short port_number, const std::string& username,
+                                               const std::string& password)
+{
+  if (version == RWSVersion::v2_0)
+  {
+    return std::unique_ptr<RWSManagerBase>{ new RWSManagerV2{ ip_address, port_number, username, password } };
+  }
+
+  return std::unique_ptr<RWSManagerBase>{ new RWSManagerV1{ ip_address, port_number, username, password } };
+}
+
+/***********************************************************
+ * Explicit instantiations
+ *
+ * Both versions are instantiated here so the templated bodies stay in this translation
+ * unit rather than moving into the header.
+ */
+
+template class RWSManagerT<rws::v1_0::RWSStateMachineInterface, rws::v1_0::RWSClient>;
+template class RWSManagerT<rws::v2_0::RWSStateMachineInterface, rws::v2_0::RWSClient>;
 
 }  // namespace robot
 }  // namespace abb

@@ -37,10 +37,14 @@
 #ifndef ABB_EGM_RWS_MANAGERS_RWS_MANAGER_H
 #define ABB_EGM_RWS_MANAGERS_RWS_MANAGER_H
 
+#include <memory>
 #include <mutex>
 #include <functional>
+#include <type_traits>
+#include <utility>
 
 #include <abb_librws/v1_0/rws_state_machine_interface.h>
+#include <abb_librws/v2_0/rws_state_machine_interface.h>
 
 #include "utilities.h"
 
@@ -49,12 +53,78 @@ namespace abb
 namespace robot
 {
 /**
- * \brief Manager for handling Robot Web Service (RWS) communication with an ABB robot controller.
+ * \brief Version of the Robot Web Services protocol that a robot controller speaks.
+ *
+ * IRC5 controllers (RobotWare 6) serve RWS 1.0 over plain HTTP. OmniCore controllers
+ * (RobotWare 7 and later) serve RWS 2.0 over TLS only.
  */
-class RWSManager
+enum class RWSVersion
+{
+  v1_0,
+  v2_0
+};
+
+/**
+ * \brief Maps a station's controller generation to the RWS version it serves.
+ *
+ * \param controller_generation as configured for the station (e.g. "irc5" or "omnicore").
+ *
+ * \return RWSVersion to use. Anything other than "omnicore" maps to v1.0, so stations
+ *         that do not declare a generation keep their existing IRC5 behaviour.
+ */
+RWSVersion rwsVersionFromControllerGeneration(const std::string& controller_generation);
+
+/**
+ * \brief A unit of work to run against a robot controller's RWS interface.
+ *
+ * The two librws state machine interfaces are identical apart from their namespace, so a
+ * service body written against one compiles unchanged against the other. This type erases
+ * which of the two it will be handed, which keeps callers free of the version choice.
+ */
+class RWSService
 {
 public:
-  using ServiceFunctor = std::function<void(rws::v1_0::RWSStateMachineInterface& interface)>;
+  virtual ~RWSService() = default;
+
+  virtual void operator()(rws::v1_0::RWSStateMachineInterface& interface) const = 0;
+  virtual void operator()(rws::v2_0::RWSStateMachineInterface& interface) const = 0;
+};
+
+/**
+ * \brief Wraps a generic callable (e.g. a lambda taking 'auto&') as an RWSService.
+ */
+template <typename Callable>
+class RWSServiceOf final : public RWSService
+{
+public:
+  explicit RWSServiceOf(Callable callable) : callable_{ std::move(callable) }
+  {
+  }
+
+  void operator()(rws::v1_0::RWSStateMachineInterface& interface) const override
+  {
+    callable_(interface);
+  }
+
+  void operator()(rws::v2_0::RWSStateMachineInterface& interface) const override
+  {
+    callable_(interface);
+  }
+
+private:
+  mutable Callable callable_;
+};
+
+/**
+ * \brief Manager for handling Robot Web Service (RWS) communication with an ABB robot controller.
+ *
+ * Version-erased interface. Callers hold one of these and never name an RWS version; the
+ * concrete manager built by makeRWSManager() decides which librws interface is used.
+ */
+class RWSManagerBase
+{
+public:
+  virtual ~RWSManagerBase() = default;
 
   /**
    * \brief Creates a manager for handling communication with the robot controller's RWS server.
@@ -64,9 +134,6 @@ public:
    * \param username for the RWS authentication process.
    * \param password for the RWS authentication process.
    */
-  RWSManager(const std::string& ip_address, const unsigned short port_number, const std::string& username,
-             const std::string& password);
-
   /**
    * \brief Collects key data, about the robot controller's active system, and parses it into a structured description.
    *
@@ -76,7 +143,7 @@ public:
    *
    * \throw std::runtime_error if a handleable error happened (e.g. communication timed out).
    */
-  RobotControllerDescription collectAndParseSystemData(const std::string& prefix);
+  virtual RobotControllerDescription collectAndParseSystemData(const std::string& prefix) = 0;
 
   /**
    * \brief Collects runtime data, about the robot controller's active system, and updates the runtime data containers.
@@ -89,14 +156,14 @@ public:
    * \throw std::runtime_error if a handleable error happened (e.g. communication timed out).
    * \throw std::logic_error if an unhandleable error happened (e.g. switching to another robot controller system).
    */
-  void collectAndUpdateRuntimeData(SystemStateData& system_state_data, MotionData& motion_data);
+  virtual void collectAndUpdateRuntimeData(SystemStateData& system_state_data, MotionData& motion_data) = 0;
 
   /**
    * \brief Checks if the low priority RWS interface is ready to be used.
    *
    * \return bool true if the interface is ready.
    */
-  bool isInterfaceReady();
+  virtual bool isInterfaceReady() = 0;
 
   /**
    * \brief Runs the provided service with the low priority RWS interface.
@@ -109,7 +176,12 @@ public:
    *
    * \return bool true if the service was run.
    */
-  bool runService(ServiceFunctor const& service);
+  template <typename Callable>
+  bool runService(Callable&& service)
+  {
+    RWSServiceOf<typename std::decay<Callable>::type> wrapped{ std::forward<Callable>(service) };
+    return runServiceImpl(wrapped);
+  }
 
   /**
    * \brief Runs the provided service with the high priority RWS interface.
@@ -120,7 +192,12 @@ public:
    *
    * \param service to run.
    */
-  void runPriorityService(ServiceFunctor const& service);
+  template <typename Callable>
+  void runPriorityService(Callable&& service)
+  {
+    RWSServiceOf<typename std::decay<Callable>::type> wrapped{ std::forward<Callable>(service) };
+    runPriorityServiceImpl(wrapped);
+  }
 
   /**
    * \brief Creates a debug text of the latest connection attempt.
@@ -130,7 +207,46 @@ public:
    *
    * \return std::string containing the debug text.
    */
-  std::string debugText() const;
+  virtual std::string debugText() const = 0;
+
+protected:
+  virtual bool runServiceImpl(RWSService const& service) = 0;
+  virtual void runPriorityServiceImpl(RWSService const& service) = 0;
+};
+
+/**
+ * \brief Concrete RWS manager, bound to one librws interface version.
+ *
+ * \tparam Interface librws state machine interface type (v1_0 or v2_0).
+ * \tparam Client librws client type matching Interface.
+ */
+template <typename Interface, typename Client>
+class RWSManagerT : public RWSManagerBase
+{
+public:
+  /**
+   * \brief Creates a manager for handling communication with the robot controller's RWS server.
+   *
+   * \param ip_address to the RWS server.
+   * \param port_number used by the RWS server.
+   * \param username for the RWS authentication process.
+   * \param password for the RWS authentication process.
+   */
+  RWSManagerT(const std::string& ip_address, const unsigned short port_number, const std::string& username,
+              const std::string& password);
+
+  RobotControllerDescription collectAndParseSystemData(const std::string& prefix) override;
+
+  void collectAndUpdateRuntimeData(SystemStateData& system_state_data, MotionData& motion_data) override;
+
+  bool isInterfaceReady() override;
+
+  std::string debugText() const override;
+
+protected:
+  bool runServiceImpl(RWSService const& service) override;
+
+  void runPriorityServiceImpl(RWSService const& service) override;
 
 private:
   /**
@@ -146,21 +262,22 @@ private:
   /**
    * \brief RWSClient intended for lower priority requests
    **/
-  rws::v1_0::RWSClient client_;
+  Client client_;
 
   /**
    * \brief RWSClient intended for higher priority requests
    **/
-  rws::v1_0::RWSClient priority_client_;
+  Client priority_client_;
+
   /**
    * \brief RWS communication interface, intended for lower priority requests.
    */
-  rws::v1_0::RWSStateMachineInterface interface_;
+  Interface interface_;
 
   /**
    * \brief RWS communication interface, intended for higher priority requests.
    */
-  rws::v1_0::RWSStateMachineInterface priority_interface_;
+  Interface priority_interface_;
 
   /**
    * \brief Key data about the robot controller's active system (in raw, unstructured, format).
@@ -177,6 +294,24 @@ private:
    */
   SystemStateData system_state_data_;
 };
+
+using RWSManagerV1 = RWSManagerT<rws::v1_0::RWSStateMachineInterface, rws::v1_0::RWSClient>;
+using RWSManagerV2 = RWSManagerT<rws::v2_0::RWSStateMachineInterface, rws::v2_0::RWSClient>;
+
+/**
+ * \brief Creates the RWS manager for a given protocol version.
+ *
+ * \param version of the RWS protocol the controller serves.
+ * \param ip_address to the RWS server.
+ * \param port_number used by the RWS server.
+ * \param username for the RWS authentication process.
+ * \param password for the RWS authentication process.
+ *
+ * \return std::unique_ptr to the created manager.
+ */
+std::unique_ptr<RWSManagerBase> makeRWSManager(RWSVersion version, const std::string& ip_address,
+                                               const unsigned short port_number, const std::string& username,
+                                               const std::string& password);
 
 }  // namespace robot
 }  // namespace abb
