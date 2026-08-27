@@ -34,6 +34,8 @@
  ***********************************************************************************************************************
  */
 
+#include <algorithm>
+#include <cctype>
 #include <stdexcept>
 
 #include "abb_egm_rws_managers/rws_manager.h"
@@ -686,11 +688,47 @@ std::string RWSManagerT<Interface, Client>::debugText() const
  * Version selection
  */
 
+namespace
+{
+/**
+ * \brief Reduces a configured controller generation to the spelling this file compares against.
+ *
+ * \param controller_generation as configured for the station.
+ *
+ * \return the value lowercased and stripped of surrounding whitespace.
+ */
+std::string normalizeControllerGeneration(const std::string& controller_generation)
+{
+  const auto first = controller_generation.find_first_not_of(" \t");
+  if (first == std::string::npos)
+  {
+    return {};
+  }
+  const auto last = controller_generation.find_last_not_of(" \t");
+
+  std::string normalized{ controller_generation.substr(first, last - first + 1) };
+  std::transform(normalized.begin(), normalized.end(), normalized.begin(),
+                 [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
+  return normalized;
+}
+}  // namespace
+
+bool isKnownControllerGeneration(const std::string& controller_generation)
+{
+  const auto normalized = normalizeControllerGeneration(controller_generation);
+  return normalized == "omnicore" || normalized == "irc5";
+}
+
 RWSVersion rwsVersionFromControllerGeneration(const std::string& controller_generation)
 {
   // Only OmniCore serves RWS 2.0. Everything else - including an absent or unrecognised
   // value - keeps the IRC5 behaviour, so existing stations are unaffected.
-  return controller_generation == "omnicore" ? RWSVersion::v2_0 : RWSVersion::v1_0;
+  //
+  // Match case insensitively and ignore surrounding whitespace. "OmniCore" is how the
+  // controller itself spells it, and a station that spells it that way would otherwise
+  // drop to plain HTTP with nothing to show for it but a connect retry loop. Callers that
+  // can report a configuration mistake should ask isKnownControllerGeneration() first.
+  return normalizeControllerGeneration(controller_generation) == "omnicore" ? RWSVersion::v2_0 : RWSVersion::v1_0;
 }
 
 std::unique_ptr<RWSManagerBase> makeRWSManager(RWSVersion version, const std::string& ip_address,

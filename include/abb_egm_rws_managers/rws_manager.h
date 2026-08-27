@@ -67,12 +67,28 @@ enum class RWSVersion
 /**
  * \brief Maps a station's controller generation to the RWS version it serves.
  *
+ * The comparison ignores case and surrounding whitespace, so "OmniCore" selects RWS 2.0
+ * the same as "omnicore" does.
+ *
  * \param controller_generation as configured for the station (e.g. "irc5" or "omnicore").
  *
  * \return RWSVersion to use. Anything other than "omnicore" maps to v1.0, so stations
  *         that do not declare a generation keep their existing IRC5 behaviour.
  */
 RWSVersion rwsVersionFromControllerGeneration(const std::string& controller_generation);
+
+/**
+ * \brief Whether a configured controller generation is one this library recognises.
+ *
+ * An unrecognised value is not an error here - it maps to RWS 1.0 like any non-OmniCore
+ * controller - but it is almost always a misconfiguration, and one that shows up only as
+ * a connect retry loop. Callers with somewhere to log should use this to say so.
+ *
+ * \param controller_generation as configured for the station.
+ *
+ * \return bool true if the value names a known controller generation.
+ */
+bool isKnownControllerGeneration(const std::string& controller_generation);
 
 /**
  * \brief A unit of work to run against a robot controller's RWS interface.
