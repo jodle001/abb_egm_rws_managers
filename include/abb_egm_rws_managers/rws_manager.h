@@ -40,6 +40,7 @@
 #include <memory>
 #include <mutex>
 #include <functional>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -142,14 +143,6 @@ class RWSManagerBase
 public:
   virtual ~RWSManagerBase() = default;
 
-  /**
-   * \brief Creates a manager for handling communication with the robot controller's RWS server.
-   *
-   * \param ip_address to the RWS server.
-   * \param port_number used by the RWS server.
-   * \param username for the RWS authentication process.
-   * \param password for the RWS authentication process.
-   */
   /**
    * \brief Collects key data, about the robot controller's active system, and parses it into a structured description.
    *
