@@ -171,7 +171,14 @@ void SystemDataParser::parseSystemIndicators()
     {
       system_indicators->mutable_options()->set_egm(true);
     }
-    else if (option == "604-1 MultiMove Coordinated" || option == "604-2 MultiMove Independent")
+    // Match the descriptive part rather than the option number: IRC5 numbers
+    // these 604-1 and 604-2, OmniCore 3102-1 and 3102-2. Matching the number
+    // recognised IRC5 only, and a MultiMove system that goes undetected has
+    // its configured mechanical unit groups discarded by
+    // parseMechanicalUnitGroups in favour of a single synthetic group, which
+    // puts the robot and its external axes into one joint namespace.
+    else if (option.find("MultiMove Coordinated") != std::string::npos ||
+             option.find("MultiMove Independent") != std::string::npos)
     {
       system_indicators->mutable_options()->set_multimove(true);
     }
