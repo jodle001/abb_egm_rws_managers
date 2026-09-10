@@ -156,7 +156,9 @@ endif()
 # Tests
 #===========================================================
 # Opt-in and dependency-tolerant: a build without GTest still builds the
-# library, which keeps this package usable outside a ROS workspace.
+# library, which keeps this package usable outside a ROS workspace. The
+# imported target is the one FindGTest has defined since long before this
+# file's minimum version; GTest::gtest only exists from CMake 3.20.
 include(CTest)
 
 if(BUILD_TESTING)
@@ -165,9 +167,7 @@ if(BUILD_TESTING)
   if(GTest_FOUND)
     add_executable(test_system_data_parser test/test_system_data_parser.cpp)
 
-    target_link_libraries(test_system_data_parser PRIVATE ${PROJECT_NAME} GTest::gtest)
-
-    target_compile_features(test_system_data_parser PRIVATE cxx_std_14)
+    target_link_libraries(test_system_data_parser PRIVATE ${PROJECT_NAME} GTest::GTest)
 
     add_test(NAME test_system_data_parser COMMAND test_system_data_parser)
   else()
