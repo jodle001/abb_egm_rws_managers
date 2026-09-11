@@ -153,6 +153,14 @@ void SystemDataParser::parseHeaderRobotWareVersion()
   }
 }
 
+namespace
+{
+bool endsWith(const std::string& text, const std::string& suffix)
+{
+  return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+}  // namespace
+
 void SystemDataParser::parseSystemIndicators()
 {
   auto system_indicators{ description_.mutable_system_indicators() };
@@ -171,7 +179,15 @@ void SystemDataParser::parseSystemIndicators()
     {
       system_indicators->mutable_options()->set_egm(true);
     }
-    else if (option == "604-1 MultiMove Coordinated" || option == "604-2 MultiMove Independent")
+    // Match the descriptive part rather than the option number: IRC5 numbers
+    // these 604-1 and 604-2, OmniCore 3102-1 and 3102-2. Matching the number
+    // recognised IRC5 only, and a MultiMove system that goes undetected has
+    // its configured mechanical unit groups discarded by
+    // parseMechanicalUnitGroups in favour of a single synthetic group, which
+    // puts the robot and its external axes into one joint namespace. The
+    // description is the option's suffix on both generations, so it is
+    // matched as one: a false positive here discards a valid configuration.
+    else if (endsWith(option, "MultiMove Coordinated") || endsWith(option, "MultiMove Independent"))
     {
       system_indicators->mutable_options()->set_multimove(true);
     }
@@ -194,6 +210,14 @@ void SystemDataParser::parseMechanicalUnitGroups()
 {
   const auto& cfg_mugs{ system_data_.configurations.mechanical_unit_groups };
   const auto& cfg_mus{ system_data_.configurations.mechanical_units };
+
+  // A MultiMove system keeps its configured groups, so it must have some;
+  // consumers index the first group, and an empty list would only surface
+  // there. Say so here instead.
+  if (description_.system_indicators().options().multimove() && cfg_mugs.empty())
+  {
+    throw std::runtime_error{ "MultiMove system reports no mechanical unit group configurations" };
+  }
 
   //--------------------------------------------------------
   // Parse the system data
